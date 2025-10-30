@@ -77,7 +77,7 @@ resource "aws_security_group" "cluster" {
   }
 
   tags = merge(
-    var.common_tags,
+  var.tags,
     {
       Name = "${var.project_name}-cluster-sg"
     }
@@ -109,7 +109,7 @@ resource "aws_security_group" "nodes" {
   }
 
   tags = merge(
-    var.common_tags,
+  var.tags,
     {
       Name = "${var.project_name}-nodes-sg"
     }
@@ -192,7 +192,7 @@ resource "aws_launch_template" "eks_nodes" {
   tag_specifications {
     resource_type = "instance"
     tags = merge(
-      var.common_tags,
+  var.tags,
       {
         Name = "${var.project_name}-eks-node"
       }
