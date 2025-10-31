@@ -1,7 +1,13 @@
-
 // IAM role for EKS control plane
 resource "aws_iam_role" "eks_cluster" {
   name = "${var.project_name}-eks-cluster-role"
+  
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-eks-cluster-role"
+    }
+  )
 
   assume_role_policy = <<POLICY
 {
@@ -28,6 +34,13 @@ resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
 // IAM role for EKS worker nodes
 resource "aws_iam_role" "eks_nodes" {
   name = "${var.project_name}-eks-node-role"
+  
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-eks-node-role"
+    }
+  )
 
   assume_role_policy = <<POLICY
 {
@@ -77,9 +90,9 @@ resource "aws_security_group" "cluster" {
   }
 
   tags = merge(
-  var.tags,
+    var.tags,
     {
-      Name = "${var.project_name}-cluster-sg"
+      Name = "${var.eks_cluster_name}-cluster-sg"
     }
   )
 }
@@ -109,9 +122,9 @@ resource "aws_security_group" "nodes" {
   }
 
   tags = merge(
-  var.tags,
+    var.tags,
     {
-      Name = "${var.project_name}-nodes-sg"
+      Name = "${var.eks_cluster_name}-nodes-sg"
     }
   )
 }
@@ -141,6 +154,13 @@ resource "aws_security_group_rule" "nodes_cluster_inbound" {
 resource "aws_eks_cluster" "main" {
   name     = var.eks_cluster_name
   role_arn = aws_iam_role.eks_cluster.arn
+  
+  tags = merge(
+    var.tags,
+    {
+      Name = var.eks_cluster_name
+    }
+  )
 
   vpc_config {
     subnet_ids         = var.private_subnet_ids
@@ -158,6 +178,13 @@ resource "aws_eks_node_group" "main" {
   node_group_name = var.eks_node_group_name
   node_role_arn   = aws_iam_role.eks_nodes.arn
   subnet_ids      = var.private_subnet_ids
+  
+  tags = merge(
+    var.tags,
+    {
+      Name = var.eks_node_group_name
+    }
+  )
   
   # Specify AMI type for Graviton (ARM) instances with Amazon Linux 2023
   ami_type = "AL2023_ARM_64_STANDARD"

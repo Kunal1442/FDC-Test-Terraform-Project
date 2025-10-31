@@ -22,9 +22,12 @@ resource "aws_subnet" "public" {
   availability_zone       = var.availability_zones[count.index]
   map_public_ip_on_launch = true
 
-  tags = {
-    Name = "${var.project_name}-public-subnet-${count.index + 1}"
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-public-subnet-${count.index + 1}"
+    }
+  )
 }
 
 // Private subnets for VPC
@@ -34,18 +37,24 @@ resource "aws_subnet" "private" {
   cidr_block              = var.private_subnet_cidrs[count.index]
   availability_zone       = var.availability_zones[count.index]
 
-  tags = {
-    Name = "${var.project_name}-private-subnet-${count.index + 1}"
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-private-subnet-${count.index + 1}"
+    }
+  )
 }
 
 // Internet Gateway for public subnets
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
-  tags = {
-    Name = "${var.project_name}-igw"
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-igw"
+    }
+  )
 }
 
 // Route table for public subnets
@@ -57,9 +66,12 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.main.id
   }
 
-  tags = {
-    Name = "${var.project_name}-public-rt"
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-public-rt"
+    }
+  )
 }
 
 // Associate public subnets with public route table
@@ -72,6 +84,13 @@ resource "aws_route_table_association" "public" {
 // Elastic IPs for NAT Gateways
 resource "aws_eip" "nat" {
   count = length(var.private_subnet_cidrs)
+  
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-nat-eip-${count.index + 1}"
+    }
+  )
 }
 
 // NAT Gateways for private subnets
@@ -80,9 +99,12 @@ resource "aws_nat_gateway" "main" {
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
 
-  tags = {
-    Name = "${var.project_name}-nat-gw-${count.index + 1}"
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-nat-gw-${count.index + 1}"
+    }
+  )
 }
 
 // Route tables for private subnets
@@ -95,9 +117,12 @@ resource "aws_route_table" "private" {
     nat_gateway_id = aws_nat_gateway.main[count.index].id
   }
 
-  tags = {
-    Name = "${var.project_name}-private-rt-${count.index + 1}"
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-private-rt-${count.index + 1}"
+    }
+  )
 }
 
 // Associate private subnets with private route tables
