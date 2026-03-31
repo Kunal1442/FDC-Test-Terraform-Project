@@ -1,0 +1,303 @@
+name: Security Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  security-events: write
+
+jobs:
+  terraform-security:
+    name: Terraform Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Format Check
+        id: fmt
+        run: |
+          terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: |
+          terraform init -backend=false
+        continue-on-error: true
+
+      - name: Terraform Validate
+        id: validate
+        run: |
+          terraform validate -no-color
+        continue-on-error: true
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Init TFLint
+        run: tflint --init
+        continue-on-error: true
+
+      - name: Run TFLint
+        id: tflint
+        run: |
+          tflint --format compact --recursive > tflint-results.txt 2>&1 || true
+          cat tflint-results.txt
+        continue-on-error: true
+
+      - name: Run Checkov
+        id: checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          output_format: cli
+          output_file_path: checkov-results.txt
+          soft_fail: true
+          download_external_modules: false
+
+      - name: Run TFSec
+        id: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: .
+          format: default
+          soft_fail: true
+          additional_args: --out tfsec-results.txt
+
+      - name: Upload Checkov results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-results
+          path: checkov-results.txt
+          if-no-files-found: ignore
+
+      - name: Upload TFSec results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfsec-results
+          path: tfsec-results.txt
+          if-no-files-found: ignore
+
+      - name: Upload TFLint results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tflint-results
+          path: tflint-results.txt
+          if-no-files-found: ignore
+
+      - name: Prepare Comment
+        if: github.event_name == 'pull_request'
+        id: prepare-comment
+        run: |
+          {
+            echo "## 🔒 Security Scan Results"
+            echo ""
+            
+            # Terraform Format Check
+            echo "### Terraform Format Check"
+            if [ "${{ steps.fmt.outcome }}" == "success" ]; then
+              echo "✅ **Passed** - All Terraform files are properly formatted"
+            else
+              echo "❌ **Failed** - Some Terraform files need formatting. Run \`terraform fmt -recursive\`"
+            fi
+            echo ""
+            
+            # Terraform Validate
+            echo "### Terraform Validation"
+            if [ "${{ steps.validate.outcome }}" == "success" ]; then
+              echo "✅ **Passed** - Terraform configuration is valid"
+            else
+              echo "⚠️ **Failed** - Terraform validation found issues"
+            fi
+            echo ""
+            
+            # TFLint Results
+            echo "### TFLint Analysis"
+            if [ -f tflint-results.txt ]; then
+              if [ -s tflint-results.txt ]; then
+                echo "⚠️ **Issues Found**"
+                echo "\`\`\`"
+                head -50 tflint-results.txt
+                echo "\`\`\`"
+              else
+                echo "✅ **No issues found**"
+              fi
+            else
+              echo "ℹ️ No TFLint results available"
+            fi
+            echo ""
+            
+            # Checkov Results
+            echo "### Checkov Security Scan"
+            if [ -f checkov-results.txt ]; then
+              FAILED=$(grep -c "Failed checks:" checkov-results.txt || echo "0")
+              
+              if [ "$FAILED" -gt "0" ]; then
+                echo "⚠️ **Security issues detected**"
+                echo "- Checks status available in artifacts"
+              else
+                echo "✅ **No critical security issues found**"
+              fi
+            else
+              echo "ℹ️ Checkov scan completed - check artifacts for details"
+            fi
+            echo ""
+            
+            # TFSec Results
+            echo "### TFSec Security Scan"
+            if [ -f tfsec-results.txt ]; then
+              if [ -s tfsec-results.txt ]; then
+                PROBLEMS=$(grep -c -i "problem" tfsec-results.txt || echo "0")
+                if [ "$PROBLEMS" -gt "0" ]; then
+                  echo "⚠️ **Security issues detected** - $PROBLEMS potential problems found"
+                  echo "- Check artifacts for detailed report"
+                else
+                  echo "✅ **No security issues found**"
+                fi
+              else
+                echo "✅ **No security issues found**"
+              fi
+            else
+              echo "ℹ️ TFSec scan completed"
+            fi
+            echo ""
+            
+            # Summary
+            echo "---"
+            echo "📦 **Artifacts**: Detailed reports are available as workflow artifacts"
+            echo "🔍 **Action Required**: Review any ❌ or ⚠️ items above and fix them before merging"
+          } > comment.md
+
+      - name: Comment PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const comment = fs.readFileSync('comment.md', 'utf8');
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('🔒 Security Scan Results')
+            );
+            
+            // Create or update comment
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
+      - name: Check for Critical Failures
+        if: steps.fmt.outcome == 'failure' || steps.validate.outcome == 'failure'
+        run: |
+          echo "::error::Critical security or validation checks failed. Please fix the issues before merging."
+          exit 1
+
+  dependency-check:
+    name: Dependency Security Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  secret-scanning:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog Secret Scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
+      - name: Comment on PR if secrets found
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const comment = `## 🚨 Secret Scanning Alert
+            
+            **Potential secrets detected in your code!**
+            
+            Please review the TruffleHog scan results and ensure no sensitive information (API keys, passwords, tokens) is committed to the repository.
+            
+            ### Action Required:
+            1. Review the failed job logs for details
+            2. Remove any exposed secrets
+            3. Rotate compromised credentials immediately
+            4. Use environment variables or secret management tools instead
+            `;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
