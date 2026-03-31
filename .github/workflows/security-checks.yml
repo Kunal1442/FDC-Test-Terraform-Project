@@ -113,83 +113,84 @@ jobs:
         if: github.event_name == 'pull_request'
         id: prepare-comment
         run: |
-          echo "## 🔒 Security Scan Results" > comment.md
-          echo "" >> comment.md
-          
-          # Terraform Format Check
-          echo "### Terraform Format Check" >> comment.md
-          if [ "${{ steps.fmt.outcome }}" == "success" ]; then
-            echo "✅ **Passed** - All Terraform files are properly formatted" >> comment.md
-          else
-            echo "❌ **Failed** - Some Terraform files need formatting. Run \`terraform fmt -recursive\`" >> comment.md
-          fi
-          echo "" >> comment.md
-          
-          # Terraform Validate
-          echo "### Terraform Validation" >> comment.md
-          if [ "${{ steps.validate.outcome }}" == "success" ]; then
-            echo "✅ **Passed** - Terraform configuration is valid" >> comment.md
-          else
-            echo "⚠️ **Failed** - Terraform validation found issues" >> comment.md
-          fi
-          echo "" >> comment.md
-          
-          # TFLint Results
-          echo "### TFLint Analysis" >> comment.md
-          if [ -f tflint-results.txt ]; then
-            if [ -s tflint-results.txt ]; then
-              echo "⚠️ **Issues Found**" >> comment.md
-              echo "\`\`\`" >> comment.md
-              head -50 tflint-results.txt >> comment.md
-              echo "\`\`\`" >> comment.md
-            else
-              echo "✅ **No issues found**" >> comment.md
-            fi
-          else
-            echo "ℹ️ No TFLint results available" >> comment.md
-          fi
-          echo "" >> comment.md
-          
-          # Checkov Results
-          echo "### Checkov Security Scan" >> comment.md
-          if [ -f checkov-results.txt ]; then
-            PASSED=$(grep -o "Passed checks:" checkov-results.txt | wc -l || echo "0")
-            FAILED=$(grep -o "Failed checks:" checkov-results.txt | wc -l || echo "0")
+          {
+            echo "## 🔒 Security Scan Results"
+            echo ""
             
-            if [ "$FAILED" -gt "0" ]; then
-              echo "⚠️ **Security issues detected**" >> comment.md
-              echo "- Checks status available in artifacts" >> comment.md
+            # Terraform Format Check
+            echo "### Terraform Format Check"
+            if [ "${{ steps.fmt.outcome }}" == "success" ]; then
+              echo "✅ **Passed** - All Terraform files are properly formatted"
             else
-              echo "✅ **No critical security issues found**" >> comment.md
+              echo "❌ **Failed** - Some Terraform files need formatting. Run \`terraform fmt -recursive\`"
             fi
-          else
-            echo "ℹ️ Checkov scan completed - check artifacts for details" >> comment.md
-          fi
-          echo "" >> comment.md
-          
-          # TFSec Results
-          echo "### TFSec Security Scan" >> comment.md
-          if [ -f tfsec-results.txt ]; then
-            if [ -s tfsec-results.txt ]; then
-              PROBLEMS=$(grep -i "problem" tfsec-results.txt | wc -l || echo "0")
-              if [ "$PROBLEMS" -gt "0" ]; then
-                echo "⚠️ **Security issues detected** - $PROBLEMS potential problems found" >> comment.md
-                echo "- Check artifacts for detailed report" >> comment.md
+            echo ""
+            
+            # Terraform Validate
+            echo "### Terraform Validation"
+            if [ "${{ steps.validate.outcome }}" == "success" ]; then
+              echo "✅ **Passed** - Terraform configuration is valid"
+            else
+              echo "⚠️ **Failed** - Terraform validation found issues"
+            fi
+            echo ""
+            
+            # TFLint Results
+            echo "### TFLint Analysis"
+            if [ -f tflint-results.txt ]; then
+              if [ -s tflint-results.txt ]; then
+                echo "⚠️ **Issues Found**"
+                echo "\`\`\`"
+                head -50 tflint-results.txt
+                echo "\`\`\`"
               else
-                echo "✅ **No security issues found**" >> comment.md
+                echo "✅ **No issues found**"
               fi
             else
-              echo "✅ **No security issues found**" >> comment.md
+              echo "ℹ️ No TFLint results available"
             fi
-          else
-            echo "ℹ️ TFSec scan completed" >> comment.md
-          fi
-          echo "" >> comment.md
-          
-          # Summary
-          echo "---" >> comment.md
-          echo "📦 **Artifacts**: Detailed reports are available as workflow artifacts" >> comment.md
-          echo "🔍 **Action Required**: Review any ❌ or ⚠️ items above and fix them before merging" >> comment.md
+            echo ""
+            
+            # Checkov Results
+            echo "### Checkov Security Scan"
+            if [ -f checkov-results.txt ]; then
+              FAILED=$(grep -c "Failed checks:" checkov-results.txt || echo "0")
+              
+              if [ "$FAILED" -gt "0" ]; then
+                echo "⚠️ **Security issues detected**"
+                echo "- Checks status available in artifacts"
+              else
+                echo "✅ **No critical security issues found**"
+              fi
+            else
+              echo "ℹ️ Checkov scan completed - check artifacts for details"
+            fi
+            echo ""
+            
+            # TFSec Results
+            echo "### TFSec Security Scan"
+            if [ -f tfsec-results.txt ]; then
+              if [ -s tfsec-results.txt ]; then
+                PROBLEMS=$(grep -c -i "problem" tfsec-results.txt || echo "0")
+                if [ "$PROBLEMS" -gt "0" ]; then
+                  echo "⚠️ **Security issues detected** - $PROBLEMS potential problems found"
+                  echo "- Check artifacts for detailed report"
+                else
+                  echo "✅ **No security issues found**"
+                fi
+              else
+                echo "✅ **No security issues found**"
+              fi
+            else
+              echo "ℹ️ TFSec scan completed"
+            fi
+            echo ""
+            
+            # Summary
+            echo "---"
+            echo "📦 **Artifacts**: Detailed reports are available as workflow artifacts"
+            echo "🔍 **Action Required**: Review any ❌ or ⚠️ items above and fix them before merging"
+          } > comment.md
 
       - name: Comment PR
         if: github.event_name == 'pull_request'
